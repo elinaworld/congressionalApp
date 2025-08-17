@@ -245,7 +245,6 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _updateProfile() async {
     final bio = _bioController.text;
 
-    // Retrieve the token from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
 
@@ -274,7 +273,6 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoggedIn) {
-      // Profile Editor
       return Scaffold(
         appBar: AppBar(
           title: const Text('Edit Profile'),
@@ -288,7 +286,7 @@ class _ProfilePageState extends State<ProfilePage> {
               Center(
                 child: GestureDetector(
                   onTap: () {
-                    // Add functionality to upload a profile photo
+                    // add pfp func
                   },
                   child: CircleAvatar(
                     radius: 50,
@@ -324,7 +322,6 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     }
 
-    // Login/Sign Up Screen
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
