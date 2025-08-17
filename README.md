@@ -1,16 +1,7 @@
-# cong_app
+# App for Congressional App Challenge
 
-A new Flutter project.
+For this challenge, we will be creating an app that is able to scan and sort various different forms of trash in order to better the environment. Users will also be able to learn more about sorting different household trash and be able to earn points from taking quizzes. 
 
-## Getting Started
+## How To
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+TBD.
