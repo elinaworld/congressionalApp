@@ -38,14 +38,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   bool _isLoggedIn = false; 
   String? _username;
-  bool _isLoading = true; // Add loading state
+  bool _isLoading = true; 
 
   @override
   void initState() {
     super.initState();
     _checkLoginStatusOnStartup();
     
-    // Set up periodic token validation check every 5 minutes
     Timer.periodic(const Duration(minutes: 5), (timer) {
       if (_isLoggedIn) {
         _refreshTokenValidity();
@@ -63,7 +62,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     debugPrint('Startup check - token: ${token != null ? 'exists' : 'null'}, username: $username');
 
     if (token != null && username != null) {
-      // Verify token is still valid by making a request to the backend
       final isValid = await _verifyToken(token);
       debugPrint('Token validation result: $isValid');
       if (isValid) {
@@ -74,7 +72,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         });
         debugPrint('User logged in: $_username');
       } else {
-        // Token is invalid, clear stored data
         await _clearStoredAuth();
         setState(() {
           _isLoggedIn = false;
@@ -93,7 +90,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  // Method to refresh token validity periodically
   Future<void> _refreshTokenValidity() async {
     if (_isLoggedIn) {
       final prefs = await SharedPreferences.getInstance();
@@ -108,7 +104,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _username = null;
           });
           
-          // Show dialog to user about expired session
           if (mounted) {
             _showSessionExpiredDialog();
           }
@@ -322,8 +317,8 @@ class TakePhotoPage extends StatelessWidget {
 class ProfilePage extends StatefulWidget {
   final bool isLoggedIn;
   final String? username;
-  final Function(bool, String?) onUpdateLogin; // The callback function
-  final Function() onLogout; // Add onLogout callback
+  final Function(bool, String?) onUpdateLogin; 
+  final Function() onLogout; 
 
   const ProfilePage({
     super.key,
@@ -513,10 +508,9 @@ class _ProfilePageState extends State<ProfilePage> {
         _isLogin = true; 
       });
       
-      // Now try to log in with the new username
-      _passwordController.text = _passwordController.text; // Keep the password
-      _usernameController.text = username; // Set the username
-      await _submit(); // This will trigger login
+      _passwordController.text = _passwordController.text; 
+      _usernameController.text = username; 
+      await _submit(); 
     } else {
       debugPrint('Error saving username: ${response.body}');
     }

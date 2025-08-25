@@ -4,7 +4,6 @@ import datetime
 
 app = Flask(__name__)
 
-# In-memory storage for simplicity
 users = {}
 
 @app.route('/signup', methods=['POST'])
@@ -85,7 +84,6 @@ def profile():
             'points': user['points']
         }), 200
     
-    # POST method for updating profile
     data = request.get_json()
     user['bio'] = data.get('bio', user['bio'])
     user['profile_photo'] = data.get('profile_photo', user['profile_photo'])
