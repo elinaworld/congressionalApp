@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-
-import 'package:http/http.dart' as http; 
-import 'dart:convert'; 
-
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -41,6 +39,7 @@ class _HomePageState extends State<HomePage> {
     const Center(child: Text('Home Page', style: TextStyle(fontSize: 24))),
     const TakePhotoPage(),
     const ProfilePage(),
+    const MapsPage(),
   ];
 
   void _onItemTapped(int index) {
@@ -89,6 +88,10 @@ class _HomePageState extends State<HomePage> {
               icon: Icon(Icons.person),
               label: 'Profile',
             ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map),
+              label: 'Maps',
+            ),
           ],
         ),
       ),
@@ -102,17 +105,11 @@ class TakePhotoPage extends StatelessWidget {
   Future<void> _takePhoto() async {
     debugPrint('Take Photo button pressed!');
     final ImagePicker picker = ImagePicker();
-
-    try {
-      final XFile? photo = await picker.pickImage(source: ImageSource.camera);
-
-      if (photo != null) {
-        debugPrint('Photo taken: ${photo.path}');
-      } else {
-        debugPrint('No photo was taken.');
-      }
-    } catch (e) {
-      debugPrint('Error while taking photo: $e');
+    final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+    if (photo != null) {
+      debugPrint('Photo taken: ${photo.path}');
+    } else {
+      debugPrint('No photo was taken.');
     }
   }
 
@@ -134,6 +131,26 @@ class TakePhotoPage extends StatelessWidget {
             ),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
+        ),
+      ),
+    );
+  }
+}
+// Google Maps tab widget
+class MapsPage extends StatelessWidget {
+  const MapsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Google Maps'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+      ),
+      body: const GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: LatLng(37.7749, -122.4194), // San Francisco
+          zoom: 12,
         ),
       ),
     );
