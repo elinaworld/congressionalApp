@@ -203,7 +203,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
 
     final List<Widget> pages = [
-      const Center(child: Text('Home Page', style: TextStyle(fontSize: 24))),
+      Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Text('Home Page', style: TextStyle(fontSize: 24)),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.emoji_events),
+                label: const Text('View Global Scoreboard'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (context) => const ScoreboardPage()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
       const TakePhotoPage(),
       ProfilePage(
         isLoggedIn: _isLoggedIn,
@@ -310,6 +335,178 @@ class TakePhotoPage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class ScoreboardPage extends StatefulWidget {
+  const ScoreboardPage({super.key});
+
+  @override
+  State<ScoreboardPage> createState() => _ScoreboardPageState();
+}
+
+class _ScoreboardPageState extends State<ScoreboardPage> {
+  List<Map<String, dynamic>> _scores = [];
+  bool _loading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchScores();
+  }
+
+  Future<void> _fetchScores() async {
+    try {
+      final url = Uri.parse('http://127.0.0.1:5000/scores');
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final List<dynamic> scoresRaw = data['scores'] ?? [];
+        final parsed = scoresRaw
+            .whereType<Map<String, dynamic>>()
+            .map((m) => {
+                  'username': m['username'] ?? 'Unknown',
+                  'points': (m['points'] is int)
+                      ? m['points']
+                      : int.tryParse('${m['points']}') ?? 0,
+                })
+            .toList();
+        setState(() {
+          _scores = parsed;
+          _loading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Failed to load scores (${response.statusCode})';
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error: $e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('Global Scoreboard'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(child: Text(_errorMessage!))
+              : RefreshIndicator(
+                  onRefresh: _fetchScores,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16.0),
+                    children: [
+                      _buildTopThree(context),
+                      const SizedBox(height: 16),
+                      _buildFullList(),
+                    ],
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildTopThree(BuildContext context) {
+    final top = _scores.take(3).toList();
+    if (top.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    Widget buildCard(int index, Map<String, dynamic> item, Color color, double elevation) {
+      return Expanded(
+        child: Card(
+          color: color.withOpacity(0.1),
+          elevation: elevation,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '#${index + 1}',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${item['username']}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text('${item['points']} pts', style: const TextStyle(fontSize: 14)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final Color gold = Colors.amber;
+    final Color silver = Colors.blueGrey;
+    final Color bronze = Colors.brown;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Top 3', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            if (top.length >= 2) buildCard(1, top[1], silver, 1),
+            const SizedBox(width: 8),
+            buildCard(0, top[0], gold, 3),
+            const SizedBox(width: 8),
+            if (top.length >= 3) buildCard(2, top[2], bronze, 1),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFullList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('All Rankings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ListView.separated(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: _scores.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final item = _scores[index];
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Colors.pinkAccent.withOpacity(0.15),
+                child: Text('${index + 1}', style: const TextStyle(color: Colors.pinkAccent)),
+              ),
+              title: Text('${item['username']}'),
+              trailing: Text('${item['points']} pts', style: const TextStyle(fontWeight: FontWeight.bold)),
+            );
+          },
+        ),
+      ],
     );
   }
 }
