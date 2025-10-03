@@ -107,5 +107,22 @@ def verify_token_endpoint():
 
     return jsonify({'valid': True, 'username': username}), 200
 
+@app.route('/scores', methods=['GET'])
+def scores():
+    # Build a list of users who have a username set, along with their points
+    leaderboard = [
+        {
+            'username': u.get('username'),
+            'points': int(u.get('points', 0))
+        }
+        for u in users.values()
+        if u.get('username')
+    ]
+
+    # Sort descending by points
+    leaderboard.sort(key=lambda item: item['points'], reverse=True)
+
+    return jsonify({'scores': leaderboard}), 200
+
 if __name__ == '__main__':
     app.run(debug=True)
