@@ -3,8 +3,8 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:http/http.dart' as http; 
 import 'dart:convert'; 
+import 'dart:async';
 
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -34,25 +34,199 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _selectedIndex = 0;
+  bool _isLoggedIn = false; 
+  String? _username;
+  bool _isLoading = true; 
 
-  final List<Widget> _pages = [
-    const Center(child: Text('Home Page', style: TextStyle(fontSize: 24))),
-    const TakePhotoPage(),
-    const ProfilePage(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatusOnStartup();
+    
+    Timer.periodic(const Duration(minutes: 5), (timer) {
+      if (_isLoggedIn) {
+        _refreshTokenValidity();
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _checkLoginStatusOnStartup() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    final username = prefs.getString('username');
+
+    debugPrint('Startup check - token: ${token != null ? 'exists' : 'null'}, username: $username');
+
+    if (token != null && username != null) {
+      final isValid = await _verifyToken(token);
+      debugPrint('Token validation result: $isValid');
+      if (isValid) {
+        setState(() {
+          _isLoggedIn = true;
+          _username = username;
+          _isLoading = false;
+        });
+        debugPrint('User logged in: $_username');
+      } else {
+        await _clearStoredAuth();
+        setState(() {
+          _isLoggedIn = false;
+          _username = null;
+          _isLoading = false;
+        });
+        debugPrint('Token invalid, cleared auth data');
+      }
+    } else {
+      setState(() {
+        _isLoggedIn = false;
+        _username = null;
+        _isLoading = false;
+      });
+      debugPrint('No stored auth data found');
+    }
+  }
+
+  Future<void> _refreshTokenValidity() async {
+    if (_isLoggedIn) {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      
+      if (token != null) {
+        final isValid = await _verifyToken(token);
+        if (!isValid) {
+          await _clearStoredAuth();
+          setState(() {
+            _isLoggedIn = false;
+            _username = null;
+          });
+          
+          if (mounted) {
+            _showSessionExpiredDialog();
+          }
+        }
+      }
+    }
+  }
+
+  void _showSessionExpiredDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Session Expired'),
+          content: const Text('Your login session has expired. Please log in again to continue.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool> _verifyToken(String token) async {
+    try {
+      debugPrint('Verifying token: ${token.substring(0, 20)}...');
+      final url = Uri.parse('http://127.0.0.1:5000/verify-token');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token,
+        },
+      );
+      debugPrint('Token verification response status: ${response.statusCode}');
+      debugPrint('Token verification response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final isValid = data['valid'] == true;
+        debugPrint('Token validation result: $isValid');
+        return isValid;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error verifying token: $e');
+      return false;
+    }
+  }
+
+  Future<void> _clearStoredAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('username');
+  }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
+    
+    if (_isLoggedIn && index == 2) { 
+      _refreshTokenValidity();
+    }
+  }
+
+  void _updateLoginStatus(bool isLoggedIn, String? username) {
+    debugPrint('_updateLoginStatus called: isLoggedIn=$isLoggedIn, username=$username');
+    setState(() {
+      _isLoggedIn = isLoggedIn;
+      _username = username;
+    });
+  }
+
+  void _logout() async {
+    await _clearStoredAuth();
+    setState(() {
+      _isLoggedIn = false;
+      _username = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final List<Widget> pages = [
+      const Center(child: Text('Home Page', style: TextStyle(fontSize: 24))),
+      const TakePhotoPage(),
+      ProfilePage(
+        isLoggedIn: _isLoggedIn,
+        username: _username,
+        onUpdateLogin: _updateLoginStatus,
+        onLogout: _logout,
+      ),
+    ];
+    
     return Scaffold(
-      body: _pages[_selectedIndex],
+      appBar: (_isLoggedIn && _selectedIndex == 0) ? AppBar(
+        title: Text('Welcome, ${_username ?? 'User'}!'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+            tooltip: 'Logout',
+          ),
+        ],
+      ) : null,
+      body: pages[_selectedIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -62,7 +236,7 @@ class _HomePageState extends State<HomePage> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.2),
+              color: Colors.grey.withValues(alpha: 0.2),
               spreadRadius: 5,
               blurRadius: 10,
             ),
@@ -141,16 +315,65 @@ class TakePhotoPage extends StatelessWidget {
 }
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  final bool isLoggedIn;
+  final String? username;
+  final Function(bool, String?) onUpdateLogin; 
+  final Function() onLogout; 
+
+  const ProfilePage({
+    super.key,
+    required this.isLoggedIn,
+    this.username,
+    required this.onUpdateLogin,
+    required this.onLogout,
+  });
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isLoggedIn) {
+      _loadProfileData();
+    }
+  }
+
+  Future<void> _loadProfileData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    
+    if (token != null) {
+      try {
+        final url = Uri.parse('http://127.0.0.1:5000/profile');
+        final response = await http.get(
+          url,
+          headers: {
+            'Authorization': token,
+          },
+        );
+        
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          setState(() {
+            _bio = data['bio'] ?? '';
+            _points = data['points'] ?? 0;
+            _profilePhoto = data['profile_photo'];
+            if (_bio != null && _bio!.isNotEmpty) {
+              _bioController.text = _bio!;
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading profile data: $e');
+      }
+    }
+  }
+
   bool _isLogin = true; 
-  bool _isLoggedIn = false; 
-  String? _username; 
   String? _bio; 
   int _points = 0; 
   String? _profilePhoto; 
@@ -163,24 +386,71 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isUsernamePromptVisible = false;
 
   Future<void> _submit() async {
-    final username = _usernameController.text;
-    final email = _emailController.text;
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
     final password = _passwordController.text;
 
     if (_isLogin) {
+      if (username.isEmpty || password.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please fill in all fields'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
       debugPrint('Login button pressed');
       final response = await _sendToBackend(username: username, password: password, isLogin: true);
       if (response != null && response['token'] != null) {
+        debugPrint('Login response: $response');
+        debugPrint('Username from response: ${response['username']}');
+        
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('auth_token', response['token']);
         await prefs.setString('username', response['username'] ?? '');
+        widget.onUpdateLogin(true, response['username']);
 
         setState(() {
-          _isLoggedIn = true;
-          _username = response['username'];
+          widget.onUpdateLogin(true, response['username']);
         });
+        
+        await _loadProfileData();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Login successful!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Login failed. Please check your credentials.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } else {
+      if (email.isEmpty || password.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please fill in all fields'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
       debugPrint('Sign Up button pressed');
       final response = await _sendToBackend(email: email, password: password, isLogin: false);
       if (response != null) {
@@ -235,8 +505,12 @@ class _ProfilePageState extends State<ProfilePage> {
       debugPrint('Username saved successfully');
       setState(() {
         _isUsernamePromptVisible = false;
-        _isLogin = true; // Prompt user to log in after setting username
+        _isLogin = true; 
       });
+      
+      _passwordController.text = _passwordController.text; 
+      _usernameController.text = username; 
+      await _submit(); 
     } else {
       debugPrint('Error saving username: ${response.body}');
     }
@@ -262,7 +536,7 @@ class _ProfilePageState extends State<ProfilePage> {
       final data = jsonDecode(response.body);
       setState(() {
         _bio = bio;
-        _points = data['points'];
+        _points = data['points'] ?? 0;
       });
       debugPrint('Profile updated successfully');
     } else {
@@ -272,7 +546,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoggedIn) {
+    if (widget.isLoggedIn) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Edit Profile'),
@@ -298,6 +572,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
               const SizedBox(height: 20),
+              Center(
+                child: Text(
+                  'Username: ${widget.username ?? 'Unknown'}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 20),
               TextField(
                 controller: _bioController,
                 decoration: InputDecoration(
@@ -316,6 +597,17 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 20),
               Text('Points: $_points', style: const TextStyle(fontSize: 18)),
+              const SizedBox(height: 20),
+              Center(
+                child: ElevatedButton(
+                  onPressed: widget.onLogout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Logout'),
+                ),
+              ),
             ],
           ),
         ),
