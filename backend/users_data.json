@@ -1,0 +1,23 @@
+{
+  "elina": {
+    "password": "elina",
+    "username": "elina",
+    "bio": "",
+    "profile_photo": null,
+    "points": 0
+  },
+  "fan": {
+    "password": "fan",
+    "username": "fan",
+    "bio": "",
+    "profile_photo": null,
+    "points": 0
+  },
+  "elinaluvspeaches": {
+    "password": "efan",
+    "username": "efan",
+    "bio": "",
+    "profile_photo": null,
+    "points": 0
+  }
+}

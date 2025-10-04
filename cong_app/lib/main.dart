@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 import 'package:http/http.dart' as http; 
 import 'dart:convert'; 
 import 'dart:async';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
   runApp(const MyApp());
@@ -212,18 +215,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             children: [
               const Text('Home Page', style: TextStyle(fontSize: 24)),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.emoji_events),
-                label: const Text('View Global Scoreboard'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.arrow_forward_ios, size: 24),
+                  label: const Text(
+                    'View Global\nScoreboard',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    minimumSize: const Size(double.infinity, 80),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const ScoreboardPage()),
+                    );
+                  },
                 ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (context) => const ScoreboardPage()),
-                  );
-                },
               ),
             ],
           ),
@@ -295,8 +306,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 }
 
-class TakePhotoPage extends StatelessWidget {
+class TakePhotoPage extends StatefulWidget {
   const TakePhotoPage({super.key});
+
+  @override
+  State<TakePhotoPage> createState() => _TakePhotoPageState();
+}
+
+class _TakePhotoPageState extends State<TakePhotoPage> {
+  File? _capturedImage;
+  String? _mlResult;
+  String? _confidence;
+  bool _isAnalyzing = false;
+  String? _errorMessage;
 
   Future<void> _takePhoto() async {
     debugPrint('Take Photo button pressed!');
@@ -307,12 +329,74 @@ class TakePhotoPage extends StatelessWidget {
 
       if (photo != null) {
         debugPrint('Photo taken: ${photo.path}');
+        setState(() {
+          _capturedImage = File(photo.path);
+          _mlResult = null;
+          _confidence = null;
+          _errorMessage = null;
+        });
+        
+        // Automatically analyze the image
+        await _analyzeImage(photo.path);
       } else {
         debugPrint('No photo was taken.');
       }
     } catch (e) {
       debugPrint('Error while taking photo: $e');
+      setState(() {
+        _errorMessage = 'Error taking photo: $e';
+      });
     }
+  }
+
+  Future<void> _analyzeImage(String imagePath) async {
+    setState(() {
+      _isAnalyzing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final url = Uri.parse('http://127.0.0.1:5000/analyze-image');
+      final request = http.MultipartRequest('POST', url);
+      
+      // Add the image file
+      final imageFile = File(imagePath);
+      final stream = http.ByteStream(imageFile.openRead());
+      final length = await imageFile.length();
+      final multipartFile = http.MultipartFile('image', stream, length, filename: path.basename(imagePath));
+      request.files.add(multipartFile);
+
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(responseBody);
+        setState(() {
+          _mlResult = data['predicted_class'];
+          _confidence = (data['confidence'] * 100).toStringAsFixed(1);
+          _isAnalyzing = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Analysis failed: ${jsonDecode(responseBody)['error']}';
+          _isAnalyzing = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error analyzing image: $e';
+        _isAnalyzing = false;
+      });
+    }
+  }
+
+  void _clearImage() {
+    setState(() {
+      _capturedImage = null;
+      _mlResult = null;
+      _confidence = null;
+      _errorMessage = null;
+    });
   }
 
   @override
@@ -321,18 +405,181 @@ class TakePhotoPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Take a Photo'),
         backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
       ),
-      body: Center(
-        child: ElevatedButton.icon(
-          onPressed: _takePhoto,
-          icon: const Icon(Icons.camera_alt),
-          label: const Text('Take a Photo'),
-          style: ElevatedButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            // Take Photo Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _takePhoto,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Take a Photo'),
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+              ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          ),
+            const SizedBox(height: 20),
+            
+            // Display captured image
+            if (_capturedImage != null) ...[
+              Expanded(
+                child: Column(
+                  children: [
+                    // Image display
+                    Container(
+                      width: double.infinity,
+                      height: 300,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          _capturedImage!,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Analysis status
+                    if (_isAnalyzing) ...[
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 8),
+                      const Text('Analyzing image...', style: TextStyle(fontSize: 16)),
+                    ] else if (_mlResult != null) ...[
+                      // ML Results
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.green.shade200),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.psychology, color: Colors.green, size: 32),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Analysis Result',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _mlResult!,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Confidence: ${_confidence}%',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else if (_errorMessage != null) ...[
+                      // Error display
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.error, color: Colors.red, size: 32),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Error',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.red.shade700,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Clear button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _clearImage,
+                        icon: const Icon(Icons.clear),
+                        label: const Text('Take Another Photo'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade600,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Instructions when no image
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.camera_alt_outlined,
+                        size: 80,
+                        color: Colors.grey.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Take a photo to analyze with AI',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
