@@ -39,7 +39,7 @@ def login():
         SECRET_KEY,
         algorithm='HS256'
     )
-    return jsonify({'message': 'Login successful', 'token': token}), 200
+    return jsonify({'message': 'Login successful', 'token': token, 'username': user['username']}), 200
 
 @app.route('/username', methods=['POST'])
 def save_username():
@@ -62,8 +62,8 @@ def verify_token(token):
     except jwt.InvalidTokenError:
         return None
 
-@app.route('/profile', methods=['POST'])
-def update_profile():
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
     token = request.headers.get('Authorization')
     if not token:
         return jsonify({'error': 'Token is missing'}), 401
@@ -76,10 +76,51 @@ def update_profile():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
+    if request.method == 'GET':
+        return jsonify({
+            'username': username,
+            'bio': user['bio'],
+            'profile_photo': user['profile_photo'],
+            'points': user['points']
+        }), 200
+    
     data = request.get_json()
     user['bio'] = data.get('bio', user['bio'])
     user['profile_photo'] = data.get('profile_photo', user['profile_photo'])
-    return jsonify({'message': 'Profile updated successfully'}), 200
+
+    return jsonify({
+        'message': 'Profile updated successfully',
+        'bio': user['bio'],
+        'profile_photo': user['profile_photo'],
+        'points': user['points']  
+    }), 200
+
+@app.route('/verify-token', methods=['POST'])
+def verify_token_endpoint():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({'valid': False, 'error': 'Token is missing'}), 401
+
+    username = verify_token(token)
+    if not username:
+        return jsonify({'valid': False, 'error': 'Invalid or expired token'}), 401
+
+    return jsonify({'valid': True, 'username': username}), 200
+
+@app.route('/scores', methods=['GET'])
+def scores():
+    leaderboard = [
+        {
+            'username': u.get('username'),
+            'points': int(u.get('points', 0))
+        }
+        for u in users.values()
+        if u.get('username')
+    ]
+
+    leaderboard.sort(key=lambda item: item['points'], reverse=True)
+
+    return jsonify({'scores': leaderboard}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
