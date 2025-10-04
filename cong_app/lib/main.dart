@@ -235,7 +235,7 @@ class _ProfilePageState extends State<ProfilePage> {
       debugPrint('Username saved successfully');
       setState(() {
         _isUsernamePromptVisible = false;
-        _isLogin = true; // Prompt user to log in after setting username
+        _isLogin = true; 
       });
     } else {
       debugPrint('Error saving username: ${response.body}');

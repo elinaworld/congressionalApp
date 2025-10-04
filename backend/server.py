@@ -4,7 +4,6 @@ import datetime
 
 app = Flask(__name__)
 
-# In-memory storage for simplicity
 users = {}
 
 @app.route('/signup', methods=['POST'])
