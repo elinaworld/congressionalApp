@@ -1,23 +1,37 @@
 {
   "elina": {
     "password": "elina",
-    "username": "elina",
+    "username": "jdoe123",
     "bio": "",
     "profile_photo": null,
-    "points": 0
+    "points": 120
   },
   "fan": {
     "password": "fan",
-    "username": "fan",
+    "username": "bmckay01",
     "bio": "",
     "profile_photo": null,
-    "points": 0
+    "points": 60
   },
   "elinaluvspeaches": {
     "password": "efan",
-    "username": "efan",
+    "username": "mzieg",
+    "bio": "hi!!",
+    "profile_photo": null,
+    "points": 75
+  },
+  "efan": {
+    "password": "efan",
+    "username": "clarep",
     "bio": "",
     "profile_photo": null,
-    "points": 0
+    "points": 20
+  },
+  "elinafan@gmail.com": {
+    "password": "ilovethisplanet",
+    "username": "efan123",
+    "bio": "hiiii! i want to learn more!",
+    "profile_photo": null,
+    "points": 20
   }
 }

@@ -1,0 +1,9 @@
+backend/best_model.pth
+cong_app/build
+cong_app/android
+cong_app/ios
+cong_app/linux
+cong_app/macos
+cong_app/windows
+cong_app/.dart_tool
+.git

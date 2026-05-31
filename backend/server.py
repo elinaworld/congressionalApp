@@ -1,20 +1,25 @@
 from flask import Flask, request, jsonify
-import jwt
-import datetime
+from flask_cors import CORS
 import json
 import os
-import torch
-import torchvision.transforms as transforms
-from PIL import Image
-import io
-import base64
+import jwt
+import datetime
 
 app = Flask(__name__)
+CORS(app)
 
-USERS_FILE = 'users_data.json'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SEED_USERS_FILE = os.path.join(BASE_DIR, 'users_data.json')
+USERS_FILE = os.environ.get('USERS_FILE', os.path.join('/tmp', 'users_data.json'))
 
 def load_users():
     """Load users from file, return empty dict if file doesn't exist"""
+    if not os.path.exists(USERS_FILE) and os.path.exists(SEED_USERS_FILE):
+        try:
+            with open(SEED_USERS_FILE, 'r') as src, open(USERS_FILE, 'w') as dst:
+                dst.write(src.read())
+        except IOError:
+            pass
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, 'r') as f:
@@ -25,6 +30,7 @@ def load_users():
 
 def save_users():
     """Save users to file"""
+    global users
     try:
         with open(USERS_FILE, 'w') as f:
             json.dump(users, f, indent=2)
@@ -33,36 +39,73 @@ def save_users():
 
 users = load_users()
 
-# Load ML model
-MODEL_PATH = 'best_model.pth'
-model = None
+@app.route('/')
+def index():
+    from flask import redirect
+    return redirect('/index.html')
+
+MODEL_PATH = os.path.join(BASE_DIR, 'best_model.onnx')
+onnx_session = None
 model_loaded = False
 
+RECYCLE_IDS = {1, 2, 3, 12, 13, 15, 16, 18, 20, 21, 24, 25, 26, 27, 28, 29, 32, 33, 34, 35, 36, 38, 39, 41}
+COMPOST_IDS = {4, 17, 19, 22, 40}
+TRASH_IDS = {0, 5, 6, 7, 8, 9, 10, 11, 14, 23, 30, 31, 37, 42, 43}
+
+
 def load_model():
-    """Load the PyTorch model"""
-    global model, model_loaded
+    """Load the ONNX model on first use (lazy load for serverless cold starts)."""
+    global onnx_session, model_loaded
+    if model_loaded:
+        return True
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        print("onnxruntime not installed")
+        model_loaded = False
+        return False
     try:
         if os.path.exists(MODEL_PATH):
-            model = torch.load(MODEL_PATH, map_location='cpu')
-            model.eval()
+            onnx_session = ort.InferenceSession(
+                MODEL_PATH,
+                providers=['CPUExecutionProvider'],
+            )
             model_loaded = True
-            print(f"Model loaded successfully from {MODEL_PATH}")
+            print(f"ONNX model loaded from {MODEL_PATH}")
         else:
             print(f"Model file {MODEL_PATH} not found")
             model_loaded = False
     except Exception as e:
         print(f"Error loading model: {e}")
         model_loaded = False
+    return model_loaded
 
-# Load model on startup
-load_model()
 
-# Image preprocessing transforms
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+def preprocess_image(image):
+    """Resize and normalize image to match training pipeline (Resize + ToTensor)."""
+    import numpy as np
+    image = image.convert('RGB').resize((300, 300))
+    arr = np.array(image, dtype=np.float32) / 255.0
+    arr = np.transpose(arr, (2, 0, 1))
+    return np.expand_dims(arr, axis=0)
+
+
+def predict_label(logits):
+    import numpy as np
+    shifted = logits - np.max(logits, axis=1, keepdims=True)
+    probs = np.exp(shifted)
+    probs = probs / probs.sum(axis=1, keepdims=True)
+    predicted_class_id = int(np.argmax(probs, axis=1)[0])
+    confidence_score = float(probs[0, predicted_class_id])
+    if predicted_class_id in RECYCLE_IDS:
+        predicted_label = "Recycle"
+    elif predicted_class_id in COMPOST_IDS:
+        predicted_label = "Compost"
+    elif predicted_class_id in TRASH_IDS:
+        predicted_label = "Trash"
+    else:
+        predicted_label = "Unknown"
+    return predicted_label, confidence_score, predicted_class_id
 
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -77,7 +120,7 @@ def signup():
     save_users()
     return jsonify({'message': 'User signed up successfully'}), 200
 
-SECRET_KEY = 'v8#hG@4$Lp9!_bA7%fJz^2wY6qX&rE5(C8dI-nK*mU+oP)'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'v8#hG@4$Lp9!_bA7%fJz^2wY6qX&rE5(C8dI-nK*mU+oP)')
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -215,8 +258,11 @@ def update_points():
 def analyze_image():
     """Analyze uploaded image with ML model"""
     try:
-        if not model_loaded:
-            return jsonify({'error': 'ML model not loaded'}), 500
+        if not load_model():
+            return jsonify({'error': 'ML model could not be loaded'}), 503
+        
+        import io
+        from PIL import Image
         
         if 'image' not in request.files:
             return jsonify({'error': 'No image provided'}), 400
@@ -226,24 +272,11 @@ def analyze_image():
             return jsonify({'error': 'No image selected'}), 400
         
         image_data = file.read()
-        image = Image.open(io.BytesIO(image_data)).convert('RGB')
-        
-        input_tensor = transform(image).unsqueeze(0)
-        
-        with torch.no_grad():
-            outputs = model(input_tensor)
-            probabilities = torch.nn.functional.softmax(outputs[0], dim=1)
-            confidence, predicted_class = torch.max(probabilities, 1)
-            
-        confidence_score = confidence.item()
-        predicted_class_id = predicted_class.item()
-
-        if predicted_class_id in {1, 2, 3, 12, 13, 15, 16, 18, 20, 21, 24, 25, 26, 27, 28, 29, 32, 33, 34, 35, 36, 38, 39, 41}:
-            predicted_label = "Recycle"
-        elif predicted_class_id in {4, 17, 19, 22, 40}:
-            predicted_label = "Compost"
-        elif predicted_class_id in {5, 6, 7, 8, 9, 10, 11, 14, 23, 30, 31, 37}:
-            predicted_label = "Trash"
+        image = Image.open(io.BytesIO(image_data))
+        input_array = preprocess_image(image)
+        input_name = onnx_session.get_inputs()[0].name
+        outputs = onnx_session.run(None, {input_name: input_array})
+        predicted_label, confidence_score, predicted_class_id = predict_label(outputs[0])
         
         return jsonify({
             'success': True,
@@ -256,5 +289,32 @@ def analyze_image():
         print(f"Error analyzing image: {e}")
         return jsonify({'error': f'Image analysis failed: {str(e)}'}), 500
 
+@app.route('/update-score', methods=['POST'])
+def update_score():
+    global users 
+    
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        points = data.get('points', 0)
+        
+        if not username:
+            return jsonify({'error': 'Username is required'}), 400
+        
+        users = load_users()
+
+        user_object = next((u for u in users.values() if u.get('username') == username), None)
+
+        if user_object:
+            user_object['points'] = user_object.get('points', 0) + points
+            save_users()
+            return jsonify({'success': True, 'new_score': user_object['points']}), 200
+        else:
+            return jsonify({'error': 'User not found'}), 404
+            
+    except Exception as e:
+        print(f"Error in update_score: {e}")
+        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=8000)
